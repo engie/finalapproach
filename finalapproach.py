@@ -221,7 +221,7 @@ async def update_led(announcement_queue):
             )
 
     async def clear_display():
-        something_vaguely_useful = datetime.now().strftime('%Y-%m-%d %H-%M')
+        something_vaguely_useful = datetime.now().strftime('%Y-%m-%d %H:%M')
         await send_text(something_vaguely_useful)
 
     # Clear the display to start with. Then clear it if waiting for a new flight times out
