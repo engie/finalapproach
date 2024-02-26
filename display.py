@@ -6,8 +6,6 @@ from datetime import datetime
 # TODO: Cleaner peer module import. Cleaner module.
 import sys
 import os
-
-sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 import pyled1248
 
 UUID = "2BD223FA-4899-1F14-EC86-ED061D67B468"
