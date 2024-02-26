@@ -33,6 +33,9 @@ PlaneUpdate = namedtuple(
 )
 
 
+ROUTES_FILE = 'sfo-routes.json'
+callsigns = json.load(open(ROUTES_FILE))
+
 def calculate_new_position(lat, lon, speed_knots, bearing_degrees, elapsed_seconds):
     # Earth radius in nautical miles
     earth_radius_nm = 3440.065
@@ -101,7 +104,13 @@ class Plane:
             return None
         if self.path_crossed_line():
             self.announced = True
-            announcement = self.callsign
+
+            origin = callsigns.get(self.callsign)
+            if origin:
+                announcement = f'{self.callsign} from f{origin}'
+            else:
+                announcement = self.callsign
+
             logging.info(announcement)
             return announcement
         return None
@@ -198,6 +207,7 @@ async def update_led(announcement_queue):
     UUID = "2BD223FA-4899-1F14-EC86-ED061D67B468"
     while True:
         # TODO: Timeout & clear display
+        # TODO: Rotate colors
         announcement = await announcement_queue.get()
         logging.debug(f"Announcing {announcement}")
         async with BLEConnection(UUID, handle_rx) as connection:
