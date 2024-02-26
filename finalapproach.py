@@ -3,6 +3,7 @@ import aiohttp
 import json
 import logging
 from collections import namedtuple
+from datetime import datetime
 from time import time
 import math
 
@@ -206,11 +207,20 @@ async def poll_aircraft_json(announcement_queue, url, interval=1):
 
 async def update_led(announcement_queue):
     UUID = "2BD223FA-4899-1F14-EC86-ED061D67B468"
+    async def clear_display():
+        async with BLEConnection(UUID, handle_rx) as connection:
+            something_vaguely_useful = datetime.now().strftime('%Y-%m-%d %H-%M')
+            await send_stream(
+                connection,
+                PACKET_TYPE.TEXT,
+                text_payload(something_vaguely_useful, "red", 16),
+            )
+
+    await clear_display()
+    # Set to true if there's plane info on the display, remember to wipe it after a bit
     display_dirty = False
     while True:
-        # TODO: Timeout & clear display
         # TODO: Rotate colors
-
         try:
             announcement = await asyncio.wait_for(announcement_queue.get(), SHOW_FLIGHT_FOR)
             logging.debug(f"Announcing {announcement}")
@@ -225,13 +235,7 @@ async def update_led(announcement_queue):
                 announcement_queue.task_done()
         except asyncio.exceptions.TimeoutError:
             if display_dirty:
-                async with BLEConnection(UUID, handle_rx) as connection:
-                    # Figure out a better way to clear the display
-                    await send_stream(
-                        connection,
-                        PACKET_TYPE.TEXT,
-                        text_payload("SFO Arrivals", "red", 16),
-                    )
+                await clear_display()
                 display_dirty = False
 
 async def spin_plates(url, interval):
