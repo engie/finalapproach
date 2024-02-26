@@ -11,8 +11,8 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "../"))
 import pyled1248
 
 UUID = "2BD223FA-4899-1F14-EC86-ED061D67B468"
-SHOW_FLIGHT_FOR = 10
-
+SHOW_FLIGHT_FOR = 15
+UPDATE_CLOCK_EVERY = 30
 
 async def update_display(announcement_queue):
     # Not quite sure what to do with the colors. Seems a shame to ignore them though
@@ -36,7 +36,7 @@ async def update_display(announcement_queue):
             await clear_display()
             try:
                 announcement = await asyncio.wait_for(
-                    announcement_queue.get(), SHOW_FLIGHT_FOR
+                    announcement_queue.get(), UPDATE_CLOCK_EVERY
                 )
                 logging.debug(f"Announcing {announcement}")
                 await send_text(announcement)
