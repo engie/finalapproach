@@ -17,13 +17,10 @@ print(f'Starting with {len(callsigns)} routes')
 for flight in arrivals:
     callsign = flight['callsign']
 
-    origin = None
-    origin_seq = 0
-    for route in flight['routes']:
-        if route['route_seq'] > origin_seq:
-            origin = route['origin_airport']['airport_name']
-            origin_seq = route['route_seq']
-    assert origin != None, 'FROM THE VOID'
+    try:
+        origin = flight['airport']['airport_city']
+    except KeyError:
+        origin = flight['airport']['airport_name']
 
     if callsign in callsigns:
         assert callsigns[callsign] == origin, 'THINGS ARE CHANGING'
