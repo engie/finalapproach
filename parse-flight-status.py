@@ -1,11 +1,18 @@
 import json
 import requests
 
+ROUTES_FILE = 'sfo-routes.json'
+
 j = json.loads(requests.get("https://www.flysfo.com/flysfo/api/flight-status").content)
 data = j['data']
 arrivals = [d for d in data if d['flight_kind'] == 'Arrival']
 
-callsigns = {}
+try:
+    callsigns = json.load(open(ROUTES_FILE))
+except:
+    callsigns = {}
+
+print(f'Starting with {len(callsigns)} routes')
 
 for flight in arrivals:
     callsign = flight['callsign']
@@ -23,4 +30,5 @@ for flight in arrivals:
     else:
         callsigns[callsign] = origin
 
-json.dump(callsigns, open('sfo-routes.json', 'wt'))
+print(f'Ending with {len(callsigns)} routes')
+json.dump(callsigns, open(ROUTES_FILE, 'wt'))
