@@ -3,6 +3,7 @@ import aiohttp
 import json
 import logging
 from collections import namedtuple
+from itertools import cycle
 from datetime import datetime
 from time import time
 import math
@@ -207,36 +208,33 @@ async def poll_aircraft_json(announcement_queue, url, interval=1):
 
 async def update_led(announcement_queue):
     UUID = "2BD223FA-4899-1F14-EC86-ED061D67B468"
-    async def clear_display():
+    # Not quite sure what to do with the colors. Seems a shame to ignore them though
+    colors = cycle(['red', 'green', 'blue', 'purple', 'yellow'])
+
+    async def send_text(text):
         async with BLEConnection(UUID, handle_rx) as connection:
-            something_vaguely_useful = datetime.now().strftime('%Y-%m-%d %H-%M')
+            await scroll(connection, SCROLL.SCROLLLEFT)
             await send_stream(
                 connection,
                 PACKET_TYPE.TEXT,
-                text_payload(something_vaguely_useful, "red", 16),
+                text_payload(text, next(colors), 16),
             )
 
+    async def clear_display():
+        something_vaguely_useful = datetime.now().strftime('%Y-%m-%d %H-%M')
+        await send_text(something_vaguely_useful)
+
+    # Clear the display to start with. Then clear it if waiting for a new flight times out
+    # This clears plane information after a bit, also keeps the time vaguely up to date
     await clear_display()
-    # Set to true if there's plane info on the display, remember to wipe it after a bit
-    display_dirty = False
     while True:
-        # TODO: Rotate colors
         try:
             announcement = await asyncio.wait_for(announcement_queue.get(), SHOW_FLIGHT_FOR)
             logging.debug(f"Announcing {announcement}")
-            async with BLEConnection(UUID, handle_rx) as connection:
-                await scroll(connection, SCROLL.SCROLLLEFT)
-                await send_stream(
-                    connection,
-                    PACKET_TYPE.TEXT,
-                    text_payload(announcement, "red", 16),
-                )
-                display_dirty = True
-                announcement_queue.task_done()
+            await send_text(announcement)
+            announcement_queue.task_done()
         except asyncio.exceptions.TimeoutError:
-            if display_dirty:
-                await clear_display()
-                display_dirty = False
+            await clear_display()
 
 async def spin_plates(url, interval):
     queue = asyncio.Queue()
