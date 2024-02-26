@@ -6,9 +6,18 @@ from collections import namedtuple
 from time import time
 import math
 
+# TODO: Cleaner peer module import. Cleaner module.
+import sys
+import os
+sys.path.append(os.path.join(os.getcwd(),'../pyled1248'))
+from led1248 import send_stream, PACKET_TYPE, handle_rx, scroll, SCROLL
+from ble import BLEConnection
+from image import text_payload
+
 TOO_OLD_AGE = 60 * 5
 FINAL_APPROACH_LINE_START = (37.57016396511524, -122.31635912055852)
 FINAL_APPROACH_LINE_END = (37.63241984031554, -122.27826708675539)
+#TODO: Max altitude!
 
 PlaneUpdate = namedtuple(
     "PlaneUpdate",
@@ -92,7 +101,10 @@ class Plane:
             return None
         if self.path_crossed_line():
             self.announced = True
-            logging.info(f"ANNOUNCE {self.callsign}")
+            announcement = self.callsign
+            logging.info(announcement)
+            return announcement
+        return None
         
     def path_crossed_line(self):
         assert len(self.path) > 0, "Need a path"
@@ -130,12 +142,11 @@ class AirSpace:
         else:
             self.planes[hex_id] = Plane(pupdate)
 
-    def check_accouncements(self):
-        for plane in self.planes.values():
-            plane.get_announcement()
+    def get_accouncements(self):
+        return filter(None, [p.get_announcement() for p in self.planes.values()])
 
     def vacuum(self):
-        self.planes = {k: v for (k, v) in self.planes.items() if v.too_old()}
+        self.planes = {k: v for (k, v) in self.planes.items() if not v.too_old()}
 
 
 async def fetch_aircraft_details(session, url):
@@ -167,21 +178,50 @@ async def process_aircraft_details(airspace, aircraft_details):
         airspace.seen_plane(hex_id, pupdate)
     logging.debug(f"Currently tracking {len(airspace.planes)}")
 
-
-async def poll_aircraft_json(url, interval=1):
+async def poll_aircraft_json(announcement_queue, url, interval=1):
     airspace = AirSpace()
     async with aiohttp.ClientSession() as session:
         while True:
             try:
                 aircraft_details = await fetch_aircraft_details(session, url)
                 await process_aircraft_details(airspace, aircraft_details)
-                airspace.check_accouncements()
+                for announcement in airspace.get_accouncements():
+                    await announcement_queue.put(announcement)
             except Exception as ex:
                 logging.error(
                     f"Error fetching or processing aircraft details", exc_info=ex
                 )
+            airspace.vacuum()
             await asyncio.sleep(interval)
 
+async def update_led(announcement_queue):
+    UUID = "2BD223FA-4899-1F14-EC86-ED061D67B468"
+    while True:
+        # TODO: Timeout & clear display
+        announcement = await announcement_queue.get()
+        logging.debug(f"Announcing {announcement}")
+        async with BLEConnection(UUID, handle_rx) as connection:
+            await scroll(connection, SCROLL.SCROLLLEFT)
+            await send_stream(
+                connection,
+                PACKET_TYPE.TEXT,
+                text_payload(announcement, "red", 16),
+            )
+            announcement_queue.task_done()
+
+async def spin_plates(url, interval):
+    queue = asyncio.Queue()
+    aircraft_task = asyncio.create_task(poll_aircraft_json(queue, url, interval))
+    led_task = asyncio.create_task(update_led(queue))
+    await aircraft_task
+    await queue.join()
+    led_task.cancel()
+    
+    # TODO: Understand this!
+    try:
+        await led_task
+    except asyncio.CancelledError:
+        pass  # Task cancellation should not be considered an error
 
 if __name__ == "__main__":
     logging.basicConfig(
@@ -189,6 +229,6 @@ if __name__ == "__main__":
     )
     # URL of the aircraft.json file in the tar1090 project
     url = "http://raspberrypi:8504/tar1090/data/aircraft.json"
-    interval = 1  # Polling interval in seconds
+    interval = 0.1  # Polling interval in seconds
 
-    asyncio.run(poll_aircraft_json(url, interval))
+    asyncio.run(spin_plates(url, interval))
