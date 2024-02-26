@@ -17,6 +17,7 @@ from image import text_payload
 TOO_OLD_AGE = 60 * 5
 FINAL_APPROACH_LINE_START = (37.57016396511524, -122.31635912055852)
 FINAL_APPROACH_LINE_END = (37.63241984031554, -122.27826708675539)
+SHOW_FLIGHT_FOR = 10
 #TODO: Max altitude!
 
 PlaneUpdate = namedtuple(
@@ -107,7 +108,7 @@ class Plane:
 
             origin = callsigns.get(self.callsign)
             if origin:
-                announcement = f'{self.callsign} from f{origin}'
+                announcement = f'{self.callsign} from {origin}'
             else:
                 announcement = self.callsign
 
@@ -205,19 +206,33 @@ async def poll_aircraft_json(announcement_queue, url, interval=1):
 
 async def update_led(announcement_queue):
     UUID = "2BD223FA-4899-1F14-EC86-ED061D67B468"
+    display_dirty = False
     while True:
         # TODO: Timeout & clear display
         # TODO: Rotate colors
-        announcement = await announcement_queue.get()
-        logging.debug(f"Announcing {announcement}")
-        async with BLEConnection(UUID, handle_rx) as connection:
-            await scroll(connection, SCROLL.SCROLLLEFT)
-            await send_stream(
-                connection,
-                PACKET_TYPE.TEXT,
-                text_payload(announcement, "red", 16),
-            )
-            announcement_queue.task_done()
+
+        try:
+            announcement = await asyncio.wait_for(announcement_queue.get(), SHOW_FLIGHT_FOR)
+            logging.debug(f"Announcing {announcement}")
+            async with BLEConnection(UUID, handle_rx) as connection:
+                await scroll(connection, SCROLL.SCROLLLEFT)
+                await send_stream(
+                    connection,
+                    PACKET_TYPE.TEXT,
+                    text_payload(announcement, "red", 16),
+                )
+                display_dirty = True
+                announcement_queue.task_done()
+        except asyncio.exceptions.TimeoutError:
+            if display_dirty:
+                async with BLEConnection(UUID, handle_rx) as connection:
+                    # Figure out a better way to clear the display
+                    await send_stream(
+                        connection,
+                        PACKET_TYPE.TEXT,
+                        text_payload("SFO Arrivals", "red", 16),
+                    )
+                display_dirty = False
 
 async def spin_plates(url, interval):
     queue = asyncio.Queue()
