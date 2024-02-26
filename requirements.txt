@@ -1,2 +1,2 @@
 aiohttp
-../pyled1248
+git+https://github.com/engie/pyled1248
