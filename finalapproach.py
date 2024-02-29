@@ -2,6 +2,7 @@ import asyncio
 import aiohttp
 import json
 import logging
+import time
 
 from airspace import AirSpace, PlaneUpdate
 from display import update_display
@@ -33,32 +34,40 @@ async def process_aircraft_details(airspace, aircraft_details):
         except KeyError as ex:
             # Sometimes we don't have the data yet. Just drop these.
             continue
-        airspace.seen_plane(hex_id, pupdate)
+        await airspace.seen_plane(hex_id, pupdate)
     logging.debug(f"Currently tracking {len(airspace.planes)}")
 
-
-async def poll_aircraft_json(announcement_queue, url, interval=1):
-    airspace = AirSpace()
+WEB_POLL_INTERVAL = 2
+async def poll_aircraft_json(airspace, url):
     async with aiohttp.ClientSession() as session:
         while True:
             try:
                 aircraft_details = await fetch_aircraft_details(session, url)
                 await process_aircraft_details(airspace, aircraft_details)
-                for announcement in airspace.get_accouncements():
-                    await announcement_queue.put(announcement)
             except Exception as ex:
                 logging.error(
                     f"Error fetching or processing aircraft details", exc_info=ex
                 )
-            airspace.vacuum()
-            await asyncio.sleep(interval)
+            await airspace.vacuum()
+            await asyncio.sleep(WEB_POLL_INTERVAL)
 
+UPDATE_ANNOUNCEMENT_INTERVAL = 0.1
+async def update_announcements(airspace, announcement_queue):
+    while True:
+        announcements = await airspace.get_announcements()
+        for announcement in announcements:
+            await announcement_queue.put(announcement)
+        await asyncio.sleep(UPDATE_ANNOUNCEMENT_INTERVAL)
 
-async def spin_plates(url, interval):
+async def spin_plates(url):
     queue = asyncio.Queue()
-    aircraft_task = asyncio.create_task(poll_aircraft_json(queue, url, interval))
+    airspace = AirSpace()
+    poll_json_task = asyncio.create_task(poll_aircraft_json(airspace, url))
+    aircraft_task = asyncio.create_task(update_announcements(airspace, queue))
     display_task = asyncio.create_task(update_display(queue))
     # Block on the data source
+    await poll_json_task
+    aircraft_task.cancel()
     await aircraft_task
     # Flush out anything left in the queue
     await queue.join()
@@ -73,10 +82,9 @@ async def spin_plates(url, interval):
 
 if __name__ == "__main__":
     logging.basicConfig(
-        format="%(asctime)s %(levelname)s: %(message)s", level=logging.INFO
+        format="%(asctime)s %(levelname)s: %(message)s", level=logging.DEBUG
     )
     # URL of the aircraft.json file in the tar1090 project
-    url = "http://raspberrypi:8504/tar1090/data/aircraft.json"
-    interval = 0.1  # Polling interval in seconds
+    url = "http://192.168.8.137:8504/tar1090/data/aircraft.json"
 
-    asyncio.run(spin_plates(url, interval))
+    asyncio.run(spin_plates(url))

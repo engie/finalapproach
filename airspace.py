@@ -3,6 +3,7 @@ from collections import namedtuple
 import math
 import logging
 from time import time
+import asyncio
 
 # TODO: Max altitude!
 TOO_OLD_AGE = 60 * 5
@@ -23,8 +24,11 @@ PlaneUpdate = namedtuple(
 )
 
 ROUTES_FILE = "sfo-routes.json"
-callsigns = json.load(open(ROUTES_FILE))
-
+try:
+    callsigns = json.load(open(ROUTES_FILE))
+except FileNotFoundError:
+    logging.error("Callsigns not found")
+    callsigns = {}
 
 def calculate_new_position(lat, lon, speed_knots, bearing_degrees, elapsed_seconds):
     # Earth radius in nautical miles
@@ -59,14 +63,11 @@ def calculate_new_position(lat, lon, speed_knots, bearing_degrees, elapsed_secon
 
     return new_lat, new_lon
 
-
 class Plane:
     def __init__(self, pupdate: PlaneUpdate):
         logging.debug("First sight of " + pupdate.callsign)
         self.callsign = pupdate.callsign
         self.announced = False
-        # Path of (lat, lon) coordinates
-        self.path = []
         self.update(pupdate)
 
     def update(self, pupdate: PlaneUpdate):
@@ -74,6 +75,27 @@ class Plane:
         assert pupdate.callsign == self.callsign, "Callsign can't change"
         self.last_pupdate = pupdate
 
+        self.last_updated = time()
+
+    def get_announcement(self):
+        # If it's a good time to announce, return string else None
+        if self.announced:
+            # Only announce once
+            return None
+        if not self.path_crossed_line():
+            return None
+
+        self.announced = True
+        origin = callsigns.get(self.callsign)
+        if origin:
+            announcement = f"{self.callsign} from {origin}"
+        else:
+            announcement = self.callsign
+
+        logging.info(announcement)
+        return announcement
+
+    def path_crossed_line(self):
         # Calculate a current position, ish.
         # TODO: This is a guess, probably OK during final approach but should
         # probably sanity check the resulting path
@@ -82,31 +104,8 @@ class Plane:
             self.last_pupdate.lon,
             self.last_pupdate.speed,
             self.last_pupdate.heading,
-            self.last_pupdate.pos_age,
+            self.get_pos_age(),
         )
-        self.path.append((new_lat, new_lon))
-        self.last_updated = time()
-
-    def get_announcement(self):
-        # If it's a good time to announce, return string else None
-        if self.announced:
-            # Only announce once
-            return None
-        if self.path_crossed_line():
-            self.announced = True
-
-            origin = callsigns.get(self.callsign)
-            if origin:
-                announcement = f"{self.callsign} from {origin}"
-            else:
-                announcement = self.callsign
-
-            logging.info(announcement)
-            return announcement
-        return None
-
-    def path_crossed_line(self):
-        assert len(self.path) > 0, "Need a path"
 
         # Calculate if the plane has crossed the line
         def ccw(A, B, C):
@@ -117,17 +116,12 @@ class Plane:
             """Returns True if line segments AB and CD intersect"""
             return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
 
-        for i in range(len(self.path) - 1):
-            segment_start = self.path[i]
-            segment_end = self.path[i + 1]
-            if intersect(
-                segment_start,
-                segment_end,
-                FINAL_APPROACH_LINE_START,
-                FINAL_APPROACH_LINE_END,
-            ):
-                return True
-        return False
+        return intersect(
+            (self.last_pupdate.lat, self.last_pupdate.lon),
+            (new_lat, new_lon),
+            FINAL_APPROACH_LINE_START,
+            FINAL_APPROACH_LINE_END,
+        )
 
     def get_pos_age(self):
         since_updated = time() - self.last_updated
@@ -137,19 +131,22 @@ class Plane:
     def too_old(self):
         return self.get_pos_age() > TOO_OLD_AGE
 
-
 class AirSpace:
     def __init__(self):
+        self.lock = asyncio.Lock()
         self.planes = {}
 
-    def seen_plane(self, hex_id, pupdate: PlaneUpdate):
-        if hex_id in self.planes:
-            self.planes[hex_id].update(pupdate)
-        else:
-            self.planes[hex_id] = Plane(pupdate)
+    async def seen_plane(self, hex_id, pupdate: PlaneUpdate):
+        async with self.lock:
+            if hex_id in self.planes:
+                self.planes[hex_id].update(pupdate)
+            else:
+                self.planes[hex_id] = Plane(pupdate)
 
-    def get_accouncements(self):
-        return filter(None, [p.get_announcement() for p in self.planes.values()])
+    async def get_announcements(self):
+        async with self.lock:
+            return filter(None, [p.get_announcement() for p in self.planes.values()])
 
-    def vacuum(self):
-        self.planes = {k: v for (k, v) in self.planes.items() if not v.too_old()}
+    async def vacuum(self):
+        async with self.lock:
+            self.planes = {k: v for (k, v) in self.planes.items() if not v.too_old()}
