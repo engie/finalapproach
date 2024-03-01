@@ -3,6 +3,7 @@ import aiohttp
 import json
 import logging
 import time
+import sys
 
 from airspace import AirSpace, PlaneUpdate
 from display import update_display
@@ -100,6 +101,8 @@ if __name__ == "__main__":
         format="%(asctime)s %(levelname)s: %(message)s", level=logging.DEBUG
     )
     # URL of the aircraft.json file in the tar1090 project
-    url = "http://192.168.8.137:8504/tar1090/data/aircraft.json"
-
-    asyncio.run(spin_plates(url, None))
+    url = sys.argv[1]
+    watchdog = None
+    if len(sys.argv) > 2:
+        watchdog = sys.argv[2]
+    asyncio.run(spin_plates(sys.argv[1], watchdog))
