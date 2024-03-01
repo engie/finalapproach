@@ -24,10 +24,10 @@ PlaneUpdate = namedtuple(
 
 ROUTES_FILE = "sfo-routes.json"
 try:
-    callsigns = json.load(open(ROUTES_FILE))
+    origins = json.load(open(ROUTES_FILE))
 except FileNotFoundError:
     logging.error("Callsigns not found")
-    callsigns = {}
+    origins = {}
 
 
 def calculate_new_position(lat, lon, speed_knots, bearing_degrees, elapsed_seconds):
@@ -157,7 +157,7 @@ class Plane:
         if intersect(FINAL_APPROACH_DEPART, line):
             self.to_announce = f"{self.callsign} Departing"
         if intersect(FINAL_APPROACH_ARRIVE, line):
-            origin = callsigns.get(self.callsign)
+            origin = origins.get(self.callsign)
             if origin:
                 self.to_announce = f"{self.callsign} from {origin}"
             else:
