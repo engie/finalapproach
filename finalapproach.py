@@ -6,6 +6,7 @@ import time
 
 from airspace import AirSpace, PlaneUpdate
 from display import update_display
+from watchdog import Watchdog
 
 
 async def fetch_aircraft_details(session, url):
@@ -38,7 +39,7 @@ async def process_aircraft_details(airspace, aircraft_details):
     logging.debug(f"Currently tracking {len(airspace.planes)}")
 
 WEB_POLL_INTERVAL = 2
-async def poll_aircraft_json(airspace, url):
+async def poll_aircraft_json(watchdog, airspace, url):
     async with aiohttp.ClientSession() as session:
         while True:
             try:
@@ -49,22 +50,31 @@ async def poll_aircraft_json(airspace, url):
                     f"Error fetching or processing aircraft details", exc_info=ex
                 )
             await airspace.vacuum()
+            await watchdog.ack()
             await asyncio.sleep(WEB_POLL_INTERVAL)
 
 UPDATE_ANNOUNCEMENT_INTERVAL = 0.1
-async def update_announcements(airspace, announcement_queue):
+async def update_announcements(watchdog, airspace, announcement_queue):
     while True:
         announcements = await airspace.get_announcements()
         for announcement in announcements:
             await announcement_queue.put(announcement)
+        await watchdog.ack()
         await asyncio.sleep(UPDATE_ANNOUNCEMENT_INTERVAL)
 
-async def spin_plates(url):
+async def spin_plates(url, watchdog_file):
     queue = asyncio.Queue()
     airspace = AirSpace()
-    poll_json_task = asyncio.create_task(poll_aircraft_json(airspace, url))
-    aircraft_task = asyncio.create_task(update_announcements(airspace, queue))
-    display_task = asyncio.create_task(update_display(queue))
+    watchdog = Watchdog(watchdog_file)
+    poll_task_watch = watchdog.addTask('poll', 5)
+    poll_json_task = asyncio.create_task(poll_aircraft_json(poll_task_watch, airspace, url))
+    aircraft_task_watch = watchdog.addTask('airspace', 5)
+    aircraft_task = asyncio.create_task(update_announcements(aircraft_task_watch, airspace, queue))
+    display_task_watch = watchdog.addTask('display', 5)
+    display_task = asyncio.create_task(update_display(display_task_watch, queue))
+
+    watchdog_task = asyncio.create_task(watchdog.monitor())
+
     # Block on the data source
     await poll_json_task
     aircraft_task.cancel()
@@ -73,12 +83,17 @@ async def spin_plates(url):
     await queue.join()
     # Ask the display task to stop please
     display_task.cancel()
-
     # Wait for it to die
     try:
         await display_task
     except asyncio.CancelledError:
         pass  # Task cancellation should not be considered an error
+    
+    watchdog_task.cancel()
+    try:
+        await watchdog_task
+    except asyncio.CancelledError:
+        pass
 
 if __name__ == "__main__":
     logging.basicConfig(
@@ -87,4 +102,4 @@ if __name__ == "__main__":
     # URL of the aircraft.json file in the tar1090 project
     url = "http://192.168.8.137:8504/tar1090/data/aircraft.json"
 
-    asyncio.run(spin_plates(url))
+    asyncio.run(spin_plates(url, None))

@@ -10,7 +10,7 @@ SHOW_FLIGHT_FOR = 15
 UPDATE_CLOCK_EVERY = 30
 HEARTBEAT_PERIOD = 1
 
-async def update_display(announcement_queue):
+async def update_display(watchdog, announcement_queue):
     # Not quite sure what to do with the colors. Seems a shame to ignore them though
     colors = cycle(["red", "green", "blue", "purple", "yellow"])
 
@@ -25,7 +25,7 @@ async def update_display(announcement_queue):
         something_vaguely_useful = datetime.now().strftime("%Y-%m-%d %H:%M")
         await send_text(connection, something_vaguely_useful)
 
-    async def monitor_queue():
+    async def monitor_queue(watchdog):
         # Track these times (seconds since epoch)
         last_cleared = 0
         last_announced = 0
@@ -36,6 +36,8 @@ async def update_display(announcement_queue):
                 # Driven by the queue timeout
                 logging.debug("Heartbeat")
                 await pyled1248.heartbeat(connection)
+                # ACK the watchdog if a heartbeat has written successfully (no exception)
+                await watchdog.ack()
 
                 # Are we just spinning while an announcement is live?
                 announcement_live = now < (last_announced + SHOW_FLIGHT_FOR)
@@ -61,7 +63,7 @@ async def update_display(announcement_queue):
     
     while True:
         try:
-            await monitor_queue()
+            await monitor_queue(watchdog)
         except Exception as ex:
             logging.error("Exception driving display", exc_info=ex)
             # TODO: Is there more we can do to reset the ble system?
