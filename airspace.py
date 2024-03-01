@@ -135,6 +135,7 @@ class Plane:
     def __init__(self, pupdate: PlaneUpdate):
         logging.debug("First sight of " + pupdate.callsign)
         self.callsign = pupdate.callsign
+        self.last_pupdate = None
 
         # An announcement to share if that's worthwhile
         self.to_announce = None
@@ -147,9 +148,13 @@ class Plane:
         logging.debug("Update for " + pupdate.callsign)
         assert pupdate.callsign == self.callsign, "Callsign can't change"
         # Check whether update shows we've crossed a line
-        self.set_announcement(
-            ((self.last_pupdate.lat, self.last_pupdate.lon), (pupdate.lat, pupdate.lon)),
-        )
+        if self.last_pupdate != None:
+            self.set_announcement(
+                (
+                    (self.last_pupdate.lat, self.last_pupdate.lon),
+                    (pupdate.lat, pupdate.lon),
+                ),
+            )
         self.last_pupdate = pupdate
         self.last_updated = time()
 
