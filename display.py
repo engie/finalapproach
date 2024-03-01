@@ -4,11 +4,14 @@ import asyncio
 from datetime import datetime
 import time
 import pyled1248
+import random
 
 UUID = "2BD223FA-4899-1F14-EC86-ED061D67B468"
 SHOW_FLIGHT_FOR = 15
 UPDATE_CLOCK_EVERY = 30
 HEARTBEAT_PERIOD = 1
+
+planefacts = [x.strip() for x in open('planefacts.txt').readlines()]
 
 async def update_display(watchdog, announcement_queue):
     # Not quite sure what to do with the colors. Seems a shame to ignore them though
@@ -22,7 +25,9 @@ async def update_display(watchdog, announcement_queue):
             )
 
     async def clear_display(connection):
-        something_vaguely_useful = datetime.now().strftime("%Y-%m-%d %H:%M")
+        # Pi doesn't have an RTC!
+        # something_vaguely_useful = datetime.now().strftime("%Y-%m-%d %H:%M")
+        something_vaguely_useful = random.choice(planefacts)
         await send_text(connection, something_vaguely_useful)
 
     async def monitor_queue(watchdog):
