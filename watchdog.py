@@ -16,7 +16,7 @@ class WatchdogTask:
     async def healthy(self):
         async with self.last_seen_lock:
             if time() > self.last_seen + self.interval:
-                logging.debug("Watchdog Task unhealthy: " + self.name)
+                logging.info("Watchdog Task unhealthy: " + self.name)
                 return False
             return True
 
