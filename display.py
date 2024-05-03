@@ -24,6 +24,7 @@ async def update_display(watchdog, announcement_queue):
 
     async def clear_display(connection):
         something_vaguely_useful = datetime.now().strftime("%Y-%m-%d %H:%M")
+        await pyled1248.scroll(connection, pyled1248.SCROLL_TYPE.SCROLLLEFT)
         await send_text(connection, something_vaguely_useful)
 
     async def monitor_queue(watchdog):
