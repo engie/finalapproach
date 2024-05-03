@@ -11,8 +11,6 @@ SHOW_FLIGHT_FOR = 15
 UPDATE_CLOCK_EVERY = 30
 HEARTBEAT_PERIOD = 1
 
-planefacts = [x.strip() for x in open('planefacts.txt').readlines()]
-
 async def update_display(watchdog, announcement_queue):
     # Not quite sure what to do with the colors. Seems a shame to ignore them though
     colors = cycle(["red", "green", "blue", "purple", "yellow"])
@@ -25,9 +23,7 @@ async def update_display(watchdog, announcement_queue):
             )
 
     async def clear_display(connection):
-        # Pi doesn't have an RTC!
-        # something_vaguely_useful = datetime.now().strftime("%Y-%m-%d %H:%M")
-        something_vaguely_useful = random.choice(planefacts)
+        something_vaguely_useful = datetime.now().strftime("%Y-%m-%d %H:%M")
         await send_text(connection, something_vaguely_useful)
 
     async def monitor_queue(watchdog):
