@@ -4,6 +4,7 @@ import json
 import logging
 import time
 import sys
+import json
 
 from airspace import AirSpace, PlaneUpdate
 from display import update_display
@@ -39,6 +40,28 @@ async def process_aircraft_details(airspace, aircraft_details):
         await airspace.seen_plane(hex_id, pupdate)
     logging.debug(f"Currently tracking {len(airspace.planes)}")
 
+async def stream_aircraft(watchdog, airspace, host, port):
+    reader, writer = await asyncio.open_connection(host, port)
+    try:
+        while True:
+            line = await reader.readline()
+            if not line:
+                break
+            try:
+                plane = json.loads(line.decode().strip())
+                await process_aircraft_details(airspace, {
+                    'aircraft' : [plane],
+                })
+                await airspace.vacuum()
+                await watchdog.ack()
+            except json.JSONDecodeError:
+                logging.error(
+                    f"Error fetching or processing aircraft details", exc_info=ex
+                )
+    finally:
+        writer.close()
+        await writer.wait_closed()
+
 WEB_POLL_INTERVAL = 2
 async def poll_aircraft_json(watchdog, airspace, url):
     async with aiohttp.ClientSession() as session:
@@ -63,14 +86,20 @@ async def update_announcements(watchdog, airspace, announcement_queue):
         await watchdog.ack()
         await asyncio.sleep(UPDATE_ANNOUNCEMENT_INTERVAL)
 
-async def spin_plates(url, watchdog_file):
+async def spin_plates(mode, host, port, watchdog_file):
     queue = asyncio.Queue()
     airspace = AirSpace()
     watchdog = Watchdog(watchdog_file)
     poll_task_watch = watchdog.addTask('poll', 5)
-    poll_json_task = asyncio.create_task(poll_aircraft_json(poll_task_watch, airspace, url))
+
+    if mode == 'stream':
+        poll_json_task = asyncio.create_task(stream_aircraft(poll_task_watch, airspace, host, port))
+    else:
+        poll_json_task = asyncio.create_task(poll_aircraft_json(poll_task_watch, airspace, host))
+        
     aircraft_task_watch = watchdog.addTask('airspace', 5)
     aircraft_task = asyncio.create_task(update_announcements(aircraft_task_watch, airspace, queue))
+
     display_task_watch = watchdog.addTask('display', 5)
     display_task = asyncio.create_task(update_display(display_task_watch, queue))
 
@@ -100,9 +129,21 @@ if __name__ == "__main__":
     logging.basicConfig(
         format="%(asctime)s %(levelname)s: %(message)s", level=logging.DEBUG
     )
-    # URL of the aircraft.json file in the tar1090 project
-    url = sys.argv[1]
-    watchdog = None
-    if len(sys.argv) > 2:
-        watchdog = sys.argv[2]
-    asyncio.run(spin_plates(sys.argv[1], watchdog))
+
+    import argparse
+    # Create the top-level parser
+    parser = argparse.ArgumentParser(description="Process some command line arguments for different modes.")
+    subparsers = parser.add_subparsers(dest="mode", required=True, help="Modes of operation")
+    # Create the parser for the "stream" mode
+    parser_stream = subparsers.add_parser('stream', help='Stream mode settings')
+    parser_stream.add_argument('--host', type=str, required=True, help='Host address')
+    parser_stream.add_argument('--port', type=int, required=True, help='Port number')
+    # Create the parser for the "tar1090" mode
+    parser_tar1090 = subparsers.add_parser('tar1090', help='Tar1090 mode settings')
+    parser_tar1090.add_argument('--host', type=str, required=True, help='Host URL')
+    # Add an optional watchdog argument applicable to all modes
+    parser.add_argument('--watchdog', type=str, help='File path to watchdog device', required=False)
+
+    # Parse the arguments
+    args = parser.parse_args()
+    asyncio.run(spin_plates(args.mode, args.host, args.port, args.watchdog))
