@@ -33,6 +33,7 @@ class Watchdog:
             return all(await asyncio.gather(*[t.healthy() for t in self.tasks]))
 
         if self.watchdog_file != None:
+            logging.info("Opening watchdog: " + self.watchdog_file)
             with open(self.watchdog_file, "wt") as f:
                 while True:
                     if await healthy():
@@ -43,6 +44,7 @@ class Watchdog:
                         logging.error("Tasks STALE, not updating watchdog")
                     await asyncio.sleep(WATCHDOG_CHECK_PERIOD)
         else:
+            logging.info("No watchdog enabled")
             while True:
                 if not await healthy():
                     logging.error("Tasks STALE")

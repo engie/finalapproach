@@ -126,8 +126,11 @@ async def spin_plates(mode, host, port, watchdog_file):
         pass
 
 if __name__ == "__main__":
+    # Remove all handlers associated with the root logger object.
     logging.basicConfig(
-        format="%(asctime)s %(levelname)s: %(message)s", level=logging.DEBUG
+        format="%(asctime)s %(levelname)s: %(message)s",
+        level=logging.INFO,
+        force=True,
     )
 
     import argparse
@@ -143,7 +146,16 @@ if __name__ == "__main__":
     parser_tar1090.add_argument('--host', type=str, required=True, help='Host URL')
     # Add an optional watchdog argument applicable to all modes
     parser.add_argument('--watchdog', type=str, help='File path to watchdog device', required=False)
-
     # Parse the arguments
     args = parser.parse_args()
-    asyncio.run(spin_plates(args.mode, args.host, args.port, args.watchdog))
+
+    # Don't watchdog if there's a network adapter connected
+    watchdog = args.watchdog
+    try:
+        if watchdog and open("/sys/class/net/eth0/operstate").read().strip() == 'up':
+            logging.info("Ethernet connected so watchdog disabled")
+            watchdog = None
+    except:
+        pass
+
+    asyncio.run(spin_plates(args.mode, args.host, args.port, watchdog))
